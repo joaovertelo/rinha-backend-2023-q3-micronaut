@@ -3,8 +3,10 @@ package com.devertelo.controller;
 import com.devertelo.application.exceptions.AlreadyExistsException;
 import com.devertelo.domain.PessoaService;
 import io.lettuce.core.api.StatefulRedisConnection;
+import io.micronaut.http.HttpRequest;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.annotation.*;
+import io.micronaut.http.uri.UriBuilder;
 import io.micronaut.serde.ObjectMapper;
 import io.micronaut.validation.Validated;
 import io.micronaut.validation.validator.Validator;
@@ -33,7 +35,7 @@ public class PessoaController {
     }
 
     @Post("/pessoas")
-    public HttpResponse<Pessoa> post(@Body @Valid Pessoa pessoa) {
+    public HttpResponse<Pessoa> post(HttpRequest httpRequest, @Body @Valid Pessoa pessoa) {
         try {
             var redis = connection.sync();
             var cache = redis.get(pessoa.apelido());
@@ -46,11 +48,12 @@ public class PessoaController {
             }
             var response = pessoaService.create(pessoa);
 
-            String value = objectMapper.writeValueAsString(response);
+            var value = objectMapper.writeValueAsString(response);
             redis.set(response.apelido(), value);
             redis.set(response.id().toString(), value);
 
-            return HttpResponse.created(response);
+            var location = UriBuilder.of(httpRequest.getUri()).path(response.id().toString()).build();
+            return HttpResponse.created(response, location);
 
         } catch (AlreadyExistsException exception) {
             return HttpResponse.unprocessableEntity();

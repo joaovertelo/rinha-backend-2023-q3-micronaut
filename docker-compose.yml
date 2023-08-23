@@ -3,7 +3,7 @@ name: 'rinha-backend'
 
 services:
   api-1:
-    image: 'joaovertelo/rinha-backend:latest'
+    image: 'joaovertelo/rinha-backend-micronaut:latest'
     restart: on-failure
     build:
       context: .
@@ -13,7 +13,7 @@ services:
       - DATABASE_URL=jdbc:postgresql://postgres-db:5432/postgres
       - DATABASE_USERNAME=postgres
       - DATABASE_PASSWORD=postgres
-      - REDIS_HOST=cache:localhost
+      - REDIS_HOST=redis://cache
     depends_on:
       cache:
         condition: service_healthy
@@ -33,7 +33,7 @@ services:
       - app-network
 
   api-2:
-    image: 'joaovertelo/rinha-backend:latest'
+    image: 'joaovertelo/rinha-backend-micronaut:latest'
     restart: on-failure
     build:
       context: .
@@ -43,7 +43,7 @@ services:
       - DATABASE_URL=jdbc:postgresql://postgres-db:5432/postgres
       - DATABASE_USERNAME=postgres
       - DATABASE_PASSWORD=postgres
-      - REDIS_HOST=cache
+      - REDIS_HOST=redis://cache
     depends_on:
       cache:
         condition: service_healthy
@@ -100,7 +100,7 @@ services:
   postgres-db:
     image: postgres:latest
     command: 'postgres -c max_connections=600' #      -c shared_buffers=256MB -c synchronous_commit=off -c fsync=off -c full_page_writes=off
-    container_name: rinha-backend-db
+    container_name: rinha-backend-micronaut-db
     user: postgres
     environment:
       - POSTGRES_PASSWORD=postgres

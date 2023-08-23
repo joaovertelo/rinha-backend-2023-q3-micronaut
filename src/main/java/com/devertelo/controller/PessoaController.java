@@ -1,12 +1,16 @@
 package com.devertelo.controller;
 
-import com.devertelo.controller.domain.PessoaService;
+import com.devertelo.application.exceptions.AlreadyExistsException;
+import com.devertelo.domain.PessoaService;
+import io.lettuce.core.api.StatefulRedisConnection;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.annotation.*;
+import io.micronaut.serde.ObjectMapper;
 import io.micronaut.validation.Validated;
 import io.micronaut.validation.validator.Validator;
 import jakarta.validation.Valid;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
@@ -16,24 +20,60 @@ public class PessoaController {
 
     private final Validator validator;
     private final PessoaService pessoaService;
+    private final StatefulRedisConnection<String, String> connection;
 
-    public PessoaController(Validator validator, PessoaService pessoaService) {
+    private final ObjectMapper objectMapper;
+
+
+    public PessoaController(Validator validator, PessoaService pessoaService, StatefulRedisConnection<String, String> connection, ObjectMapper objectMapper) {
         this.validator = validator;
         this.pessoaService = pessoaService;
+        this.connection = connection;
+        this.objectMapper = objectMapper;
     }
 
     @Post("/pessoas")
     public HttpResponse<Pessoa> post(@Body @Valid Pessoa pessoa) {
-        var violations = validator.validate(pessoa);
-        if (!violations.isEmpty()) {
+        try {
+            var redis = connection.sync();
+            var cache = redis.get(pessoa.apelido());
+            if (cache != null) {
+                throw new AlreadyExistsException();
+            }
+            var violations = validator.validate(pessoa);
+            if (!violations.isEmpty()) {
+                return HttpResponse.unprocessableEntity();
+            }
+            var response = pessoaService.create(pessoa);
+
+            String value = objectMapper.writeValueAsString(response);
+            redis.set(response.apelido(), value);
+            redis.set(response.id().toString(), value);
+
+            return HttpResponse.created(response);
+
+        } catch (AlreadyExistsException exception) {
             return HttpResponse.unprocessableEntity();
+        } catch (IOException e) {
+            return HttpResponse.serverError();
         }
-        return HttpResponse.created(pessoaService.create(pessoa));
     }
 
     @Get("/pessoas/{id}")
-    public HttpResponse<String> get(@PathVariable UUID id) {
-        return HttpResponse.ok("teste");
+    public HttpResponse<Pessoa> get(@PathVariable UUID id) {
+        var redis = connection.sync();
+        var cacheString = redis.get(id.toString());
+        if (cacheString != null) {
+            try {
+                return HttpResponse.ok(objectMapper.readValue(cacheString, Pessoa.class));
+            } catch (IOException e) {
+                return HttpResponse.serverError();
+            }
+        }
+        var pessoa = pessoaService.getById(id);
+
+        return pessoa.map(HttpResponse::ok)
+                .orElse(HttpResponse.badRequest());
     }
 
     @Get("/pessoas")
@@ -46,9 +86,7 @@ public class PessoaController {
     }
 
     @Get("/contagem-pessoas")
-    public HttpResponse<String> get() {
-        return HttpResponse.ok("ok");
+    public HttpResponse<Long> get() {
+        return HttpResponse.ok(pessoaService.count());
     }
-
-
 }

@@ -1,0 +1,130 @@
+version: '3.9'
+name: 'rinha-backend'
+
+services:
+  api-1:
+    image: 'joaovertelo/rinha-backend-micronaut:latest'
+    restart: on-failure
+    build:
+      context: .
+    hostname: api-1
+    environment:
+      - SERVER_PORT=8080
+      - DATABASE_URL=jdbc:postgresql://postgres-db:5432/postgres
+      - DATABASE_USERNAME=postgres
+      - DATABASE_PASSWORD=postgres
+      - REDIS_HOST=redis://cache
+    depends_on:
+      cache:
+        condition: service_healthy
+      postgres-db:
+        condition: service_healthy
+    #      - cache
+    ulimits:
+      nofile:
+        soft: 1000000
+        hard: 1000000
+    deploy:
+      resources:
+        limits:
+          cpus: '0.4'
+          memory: '0.7GB'
+    networks:
+      - app-network
+
+  api-2:
+    image: 'joaovertelo/rinha-backend-micronaut:latest'
+    restart: on-failure
+    build:
+      context: .
+    hostname: api-2
+    environment:
+      - SERVER_PORT=8080
+      - DATABASE_URL=jdbc:postgresql://postgres-db:5432/postgres
+      - DATABASE_USERNAME=postgres
+      - DATABASE_PASSWORD=postgres
+      - REDIS_HOST=redis://cache
+    depends_on:
+      cache:
+        condition: service_healthy
+      postgres-db:
+        condition: service_healthy
+    #      - cache
+    ulimits:
+      nofile:
+        soft: 1000000
+        hard: 1000000
+    deploy:
+      resources:
+        limits:
+          cpus: '0.4'
+          memory: '0.7GB'
+    networks:
+      - app-network
+
+  nginx:
+    image: nginx:latest
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api-1
+      - api-2
+    ports:
+      - "9999:9999"
+    networks:
+      - app-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: '0.1GB'
+
+  cache:
+    hostname: cache
+    image: redis:latest
+    ports:
+      - '6379:6379'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.05'
+          memory: '0.1GB'
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_DISABLE_COMMANDS=FLUSHDB,FLUSHALL
+    healthcheck:
+      test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
+    networks:
+      - app-network
+
+  postgres-db:
+    image: postgres:latest
+    command: 'postgres -c max_connections=600' #      -c shared_buffers=256MB -c synchronous_commit=off -c fsync=off -c full_page_writes=off
+    container_name: rinha-backend-micronaut-db
+    user: postgres
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready" ]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 60s
+      resources:
+        limits:
+          cpus: '0.55'
+          memory: '1.4GB'
+    volumes:
+      - ./sql/create_tables.sql:/docker-entrypoint-initdb.d/create_tables.sql
+    networks:
+      - app-network
+
+networks:
+  app-network:
